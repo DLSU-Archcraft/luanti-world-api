@@ -1,16 +1,34 @@
 # luanti-world-api
 
-The **Archcraft Standard** template world for Luanti: a flat world on the
+The **Archcraft Standard** template world for Luanti: an empty superflat world on the
 Mineclonia game, with lamps and buttons that Lua can read and drive by channel number.
 
 ```
 archcraft-standard/              the world (copy this folder)
 ├── world.mt                     world settings (gameid = mineclonia)
-├── map_meta.txt                 flat mapgen settings, ground at y = 8
-└── worldmods/archcraft_io/      the I/O mod (always loaded with the world)
-    ├── mod.conf
-    └── init.lua
+├── map_meta.txt                 classic superflat mapgen settings
+└── worldmods/                   mods that always load with the world
+    ├── archcraft_io/            lamps, buttons and the Lua I/O API
+    └── archcraft_flat/          keeps the superflat ground empty
 ```
+
+## The ground
+
+The world uses Mineclonia's classic superflat mode. Every column is the same:
+
+| y | Block |
+|---|---|
+| 9 and up | air (you stand at y = 9) |
+| 8 | grass block |
+| 6 to 7 | dirt |
+| 5 | bedrock |
+
+The world has no trees, plants, caves, water, villages or other structures, so circuits
+have a level, empty surface. Superflat mode handles the trees, plants and caves. The
+`archcraft_flat` mod turns off the remaining Mineclonia generators (pools, fallen trees,
+villages, mineshafts and dungeons), and `map_meta.txt` turns off the newer structure
+generator, which the mod cannot reach. One side effect: `/spawnstruct` does nothing in
+this world.
 
 ## Requirements
 

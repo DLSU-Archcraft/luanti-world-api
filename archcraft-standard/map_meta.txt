@@ -32,5 +32,6 @@ mgflat_large_cave_num_max = 2
 mgflat_large_cave_flooded = 0.5
 mgflat_dungeon_ymin = -31000
 mgflat_dungeon_ymax = 31000
-mcl_superflat_classic = false
+mcl_superflat_classic = true
+mcl_levelgen_enable_ersatz = false
 [end_of_params]
