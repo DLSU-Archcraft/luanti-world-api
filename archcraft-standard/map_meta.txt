@@ -1,0 +1,24 @@
+mg_name = flat
+seed = 42
+chunksize = 5
+water_level = 1
+mapgen_limit = 31007
+mg_flags = nocaves,nodungeons,light,nodecorations
+mgflat_ground_level = 8
+mgflat_spflags = nolakes,nohills,nocaverns
+mgflat_lake_threshold = -0.45
+mgflat_hill_threshold = 0.45
+mgflat_cave_width = 0.09
+mgflat_cavern_limit = -256
+mgflat_cavern_taper = 256
+mgflat_cavern_threshold = 0.7
+mgflat_large_cave_depth = -33
+mgflat_small_cave_num_min = 0
+mgflat_small_cave_num_max = 0
+mgflat_large_cave_num_min = 0
+mgflat_large_cave_num_max = 2
+mgflat_large_cave_flooded = 0.5
+mgflat_dungeon_ymin = -31000
+mgflat_dungeon_ymax = 31000
+mcl_superflat_classic = false
+[end_of_params]
