@@ -52,13 +52,13 @@ Chat commands for testing:
 
 Use these from any mod in the world. Channels are integers from 0 to 65535.
 
-```lua
-archcraft_io.read(ch)            -- true if any button on channel ch is pressed
-archcraft_io.write(ch, on)       -- set all lamps on channel ch; returns how many
-archcraft_io.press(ch, pressed)  -- set all buttons on channel ch; returns how many
-archcraft_io.on_button(fn)       -- fn(channel, pressed, pos) whenever a button changes
-archcraft_io.index(pos)          -- register an I/O node you placed with minetest.set_node
-```
+| Call | What it does |
+|---|---|
+| `archcraft_io.read(ch)` | Returns true if any button on channel `ch` is pressed. |
+| `archcraft_io.write(ch, on)` | Sets all lamps on channel `ch`. Returns how many were set. |
+| `archcraft_io.press(ch, pressed)` | Sets all buttons on channel `ch`. Returns how many were found. |
+| `archcraft_io.on_button(fn)` | Calls `fn(channel, pressed, pos)` whenever a button changes. |
+| `archcraft_io.index(pos)` | Registers an I/O node you placed with `minetest.set_node`. |
 
 Example: mirror a button on channel 1 onto a lamp on channel 2.
 

@@ -113,7 +113,7 @@ local function notify(channel, pressed, pos)
 	end
 end
 
--- Public API -----------------------------------------------------------------
+-- Public API
 
 -- Re-index one I/O node from its current node name and metadata.
 -- Call this after placing a lamp or button with minetest.set_node,
@@ -173,7 +173,7 @@ function api.on_button(fn)
 	table.insert(listeners, fn)
 end
 
--- Node definitions -----------------------------------------------------------
+-- Node definitions
 
 local function open_config(pos, player)
 	local name = player:get_player_name()
@@ -260,7 +260,7 @@ minetest.register_lbm({
 	end,
 })
 
--- Configuration form (sneak-right-click a button, right-click a lamp) ---------
+-- Configuration form: sneak-right-click a button or right-click a lamp to open it.
 
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 	if formname ~= FORMNAME then
@@ -289,7 +289,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 	return true
 end)
 
--- Chat commands for inspection and testing ------------------------------------
+-- Chat commands for inspection and testing
 
 local function usage()
 	return false, "usage: /io list | read <ch> | write <ch> <0|1> | press <ch> <0|1>"
