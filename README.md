@@ -1,15 +1,15 @@
 # luanti-world-api
 
 The **Archcraft Standard** template world for Luanti: an empty superflat world on the
-Mineclonia game, with lamps and buttons that Lua can read and drive by channel number.
+Mineclonia game, ready for redstone circuits, that logs what players do for research analysis.
 
 ```
 archcraft-standard/              the world (copy this folder)
 ├── world.mt                     world settings (gameid = mineclonia)
 ├── map_meta.txt                 classic superflat mapgen settings
 └── worldmods/                   mods that always load with the world
-    ├── archcraft_io/            lamps, buttons and the Lua I/O API
-    └── archcraft_flat/          keeps the superflat ground empty
+    ├── archcraft_flat/          keeps the superflat ground empty
+    └── archcraft_log/           logs player activity to archcraft_log/*.jsonl
 ```
 
 ## The ground
@@ -44,59 +44,53 @@ this world.
    copy in place, because Luanti writes map data into the world folder.
 3. Start Luanti, choose **Single Player**, and select **Archcraft Standard**.
 
-The world starts in creative mode with damage disabled. Its I/O mod loads automatically
-because it sits in `worldmods/`, so there is nothing to enable.
+The world starts in creative mode with damage disabled. Its mods load automatically
+because they sit in `worldmods/`, so there is nothing to enable.
 
-## Using lamps and buttons
+## Activity log
 
-| Block | Give yourself one | Right-click | Sneak + right-click |
-|---|---|---|---|
-| Lamp | `/give <you> archcraft_io:lamp_off` | opens the channel form | opens the channel form |
-| Button | `/give <you> archcraft_io:button_off` | presses (toggles) the button | opens the channel form |
-
-Set a channel in the form (0 to 65535). Lamps and buttons with the same channel are wired
-together. A button toggles between pressed and released, and a lamp shows the state Lua writes to it.
-
-Chat commands for testing:
+The `archcraft_log` mod records what players do. Each time the world starts, it creates a new
+file in the world folder:
 
 ```
-/io list                  count lamps and buttons, list the channels in use
-/io read <ch>             is a button on channel <ch> pressed?
-/io write <ch> <0|1>      switch every lamp on channel <ch> off or on
-/io press <ch> <0|1>      release or press every button on channel <ch>
+archcraft-standard/archcraft_log/20261118-143000.jsonl
 ```
 
-## Lua API
+The file is in JSON Lines format: one JSON object per line. Every line has `t` (Unix time in
+seconds, with milliseconds) and `event`. The mod writes to disk once a second and on exit.
 
-Use these from any mod in the world. Channels are integers from 0 to 65535.
+| Event | When | Other fields |
+|---|---|---|
+| `session_start` | the world starts | `luanti`, `game`, `world`, `mapgen`, `singleplayer`, `start` (UTC) |
+| `session_end` | the world shuts down normally | none |
+| `join`, `leave` | a player joins or leaves | `player`, `pos` (join), `timed_out` (leave) |
+| `move` | every 0.5 s, if the player moved at least 0.05 blocks or turned at least 1 degree | `player`, `pos`, `yaw`, `pitch` (degrees) |
+| `wield` | the player switches the item in their hand | `player`, `item` |
+| `place` | a block is placed | `player`, `pos`, `node`, `param2`, `replaced` |
+| `dig` | a block is dug | `player`, `pos`, `node` |
+| `punch` | a block is punched (left-click) | `player`, `pos`, `node` |
+| `rightclick` | a block is right-clicked: buttons, levers, repeaters, comparators, doors and so on | `player`, `pos`, `node`, `after` (new node, if it changed), `item` |
+| `redstone` | a circuit switches a component: a lamp lights, a button releases, a torch or repeater turns on or off | `pos`, `from`, `to` |
+| `command` | the player runs a chat command | `player`, `command`, `params` |
 
-| Call | What it does |
-|---|---|
-| `archcraft_io.read(ch)` | Returns true if any button on channel `ch` is pressed. |
-| `archcraft_io.write(ch, on)` | Sets all lamps on channel `ch`. Returns how many were set. |
-| `archcraft_io.press(ch, pressed)` | Sets all buttons on channel `ch`. Returns how many were found. |
-| `archcraft_io.on_button(fn)` | Calls `fn(channel, pressed, pos)` whenever a button changes. |
-| `archcraft_io.index(pos)` | Registers an I/O node you placed with `minetest.set_node`. |
+For example, flipping a lever next to a lamp logs:
 
-Example: mirror a button on channel 1 onto a lamp on channel 2.
-
-```lua
-archcraft_io.on_button(function(ch, pressed)
-	if ch == 1 then
-		archcraft_io.write(2, pressed)
-	end
-end)
+```json
+{"t":1794983404.881,"event":"rightclick","after":"mcl_lever:lever_on","node":"mcl_lever:lever_off","pos":{"x":0,"y":9,"z":0}}
+{"t":1794983404.983,"event":"redstone","from":"mcl_redstone_lamp:lamp_off","pos":{"x":1,"y":9,"z":0},"to":"mcl_redstone_lamp:lamp_on"}
 ```
 
-If you place a lamp or button with `minetest.set_node`, set its channel in the
-metadata and then call `archcraft_io.index(pos)`. Placing with the normal
-player action registers it automatically.
+Notes:
 
-## Limits
+- `redstone` events have no `player`: a circuit changed the block, not a person. Match them to
+  the `rightclick`, `place` or `dig` just before them to find the cause.
+- Redstone wire power levels are not logged. Only components that switch state are.
+- In singleplayer, every player is named `singleplayer`. To tell students apart, collect each
+  student's `archcraft_log/` folder separately.
+- The log does not record chat messages. It does record chat commands, with their parameters.
+- Other mods can add events with `archcraft_log.log("my_event", {key = value})`.
 
-- Only lamps and buttons in **loaded map blocks** respond. A player must be nearby, or the
-  area must be force-loaded, for `read` and `write` to reach a block far away.
-- The I/O index lives in memory. It is rebuilt from the world when blocks load, so no
-  setup is needed after a restart.
-- Lamps and buttons are not craftable in this template. Get them from creative mode
-  or `/give`.
+### Collecting the logs
+
+After a session, copy the `archcraft_log/` folder out of the student's installed world, for
+example `~/.minetest/worlds/archcraft-standard/archcraft_log/`. Each file is one session.

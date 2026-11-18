@@ -1,0 +1,9 @@
+# Files Luanti creates when the world is opened in place. The repository holds only the template.
+archcraft-standard/archcraft_log/
+archcraft-standard/*.sqlite
+archcraft-standard/env_meta.txt
+archcraft-standard/force_loaded.txt
+archcraft-standard/ipban.txt
+archcraft-standard/mcl_maps/
+archcraft-standard/templates/
+archcraft-standard/players/
