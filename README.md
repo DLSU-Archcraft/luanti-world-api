@@ -10,6 +10,8 @@ archcraft-standard/              the world (copy this folder)
 └── worldmods/                   mods that always load with the world
     ├── archcraft_flat/          keeps the superflat ground empty
     └── archcraft_log/           logs player activity to archcraft_log/*.jsonl
+tools/
+└── log-viewer.html              replays a log in the browser
 ```
 
 ## The ground
@@ -94,3 +96,23 @@ Notes:
 
 After a session, copy the `archcraft_log/` folder out of the student's installed world, for
 example `~/.minetest/worlds/archcraft-standard/archcraft_log/`. Each file is one session.
+
+### Viewing a log
+
+Open `tools/log-viewer.html` in a web browser and drop a `.jsonl` file onto it. The page runs
+entirely on your computer: nothing is uploaded, and it works offline.
+
+- **Top, Front and Side** show the build from above, from the south and from the east. Use Front
+  or Side for tall circuits. The two number boxes limit the view to a slice: in the top view,
+  setting both to 9 shows only the y = 9 layer.
+- **The timeline** at the bottom replays the session. Blocks appear, switch and disappear as
+  they did in the game, and recent placements, digs, clicks and redstone changes flash. "Skip
+  idle gaps" jumps over stretches where nothing happened.
+- **The player** is drawn as a dot with a line showing where they were looking, plus a trail of
+  where they walked or flew.
+- **Click a block** to list every event at that position. Click any event to jump to that moment.
+  The arrow keys step between events and Space plays or pauses.
+- **Export CSV** saves the log as a spreadsheet-friendly file, one row per event.
+
+The viewer only knows about blocks that appear in the log. The superflat ground is assumed, and
+blocks that existed before logging started show up only if someone uses them during the session.

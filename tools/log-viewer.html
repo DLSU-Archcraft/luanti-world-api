@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Archcraft Log Viewer</title>
+<!--
+  Viewer for archcraft_log JSON Lines files. Open this file in a browser and
+  drop a log onto it. Everything runs locally; the log never leaves the computer.
+-->
+<style>
+:root {
+  --bg: #f6f5f1;
+  --panel: #ffffff;
+  --ink: #1d1d1b;
+  --muted: #6b6a64;
+  --line: #dedcd4;
+  --accent: #2f6fdb;
+  --canvas: #e9eadf;
+  --ground: #b9c4a3;
+  --grid: rgba(0, 0, 0, 0.07);
+  --ev-place: #2e9b48;
+  --ev-dig: #d4433a;
+  --ev-rightclick: #2f6fdb;
+  --ev-redstone: #c98a00;
+  --ev-punch: #8a55d4;
+  --player: #111111;
+  --select: #ff2fa0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161714;
+    --panel: #1f201c;
+    --ink: #ecebe5;
+    --muted: #9c9b93;
+    --line: #34352f;
+    --accent: #6ea0ff;
+    --canvas: #23251f;
+    --ground: #3b4530;
+    --grid: rgba(255, 255, 255, 0.06);
+    --ev-place: #4fc66a;
+    --ev-dig: #ff6b61;
+    --ev-rightclick: #6ea0ff;
+    --ev-redstone: #f2b733;
+    --ev-punch: #b48cff;
+    --player: #ffffff;
+    --select: #ff5cb8;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+button, select, input { font: inherit; color: inherit; }
+button, .btn {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover:not(:disabled), .btn:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type="number"] {
+  width: 4.5em;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+
+header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+header h1 { font-size: 16px; margin: 0 8px 0 0; }
+#summary { color: var(--muted); font-size: 13px; }
+
+main { display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
+#stage { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto 1fr; }
+#toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 8px 16px; border-bottom: 1px solid var(--line);
+}
+#toolbar .group { display: flex; align-items: center; gap: 6px; }
+#toolbar .label { color: var(--muted); font-size: 13px; }
+#canvasWrap { position: relative; min-height: 0; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+canvas.dragging { cursor: grabbing; }
+#drop {
+  position: absolute; inset: 16px;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  border: 2px dashed var(--line); border-radius: 12px;
+  color: var(--muted); font-size: 15px; pointer-events: none;
+}
+#drop.over { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+#drop.hidden { display: none; }
+#tip {
+  position: absolute; pointer-events: none; display: none;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  max-width: 320px; white-space: pre-line;
+}
+#legend {
+  position: absolute; left: 12px; bottom: 12px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 8px; font-size: 12px; max-width: 60%;
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+}
+#legend:empty { display: none; }
+.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+#viewHint { position: absolute; right: 12px; top: 10px; font-size: 12px; color: var(--muted); pointer-events: none; }
+
+aside {
+  border-left: 1px solid var(--line); background: var(--panel);
+  display: flex; flex-direction: column; min-height: 0;
+}
+aside section { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 6px; }
+#stats table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#stats td { padding: 1px 0; }
+#stats td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+#filters { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
+#filters label { white-space: nowrap; }
+#selection:empty { display: none; }
+#selection .close { float: right; padding: 0 6px; }
+#eventsBox { flex: 1; min-height: 120px; display: flex; flex-direction: column; padding-bottom: 0; }
+#events { flex: 1; overflow: auto; font-size: 12px; font-variant-numeric: tabular-nums; margin: 0 -14px; }
+.ev { display: grid; grid-template-columns: 58px 74px 1fr; gap: 6px; padding: 2px 14px; cursor: pointer; border-left: 3px solid transparent; }
+.ev:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ev.future { opacity: 0.45; }
+.ev.current { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ev .time { color: var(--muted); }
+.ev .detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note { color: var(--muted); font-size: 12px; padding: 6px 14px; }
+
+footer {
+  display: grid; grid-template-columns: auto auto auto 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 16px; border-top: 1px solid var(--line); background: var(--panel);
+}
+#scrub { width: 100%; }
+#clock { font-variant-numeric: tabular-nums; min-width: 12ch; text-align: right; }
+footer label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+@media (max-width: 860px) {
+  body { grid-template-rows: auto auto auto; height: auto; }
+  main { grid-template-columns: 1fr; }
+  #canvasWrap { height: 60vh; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+  #events { max-height: 50vh; }
+  footer { grid-template-columns: auto 1fr auto; }
+  footer .wide { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Archcraft log viewer</h1>
+  <label class="btn">Open log&hellip;<input type="file" id="file" accept=".jsonl,.json,.txt" hidden></label>
+  <button id="csv" disabled>Export CSV</button>
+  <span id="summary">No log loaded</span>
+</header>
+
+<main>
+  <section id="stage">
+    <div id="toolbar">
+      <div class="group" role="group" aria-label="View">
+        <span class="label">View</span>
+        <button data-view="top" aria-pressed="true" title="Looking down (x across, z up the screen)">Top</button>
+        <button data-view="front" aria-pressed="false" title="Looking north from the south (x across, y up)">Front</button>
+        <button data-view="side" aria-pressed="false" title="Looking west from the east (z across, y up)">Side</button>
+      </div>
+      <div class="group">
+        <span class="label" id="rangeLabel">Height (y)</span>
+        <input type="number" id="rangeLo" step="1" aria-label="Slice from">
+        <span class="label">to</span>
+        <input type="number" id="rangeHi" step="1" aria-label="Slice to">
+        <button id="rangeAll" title="Show every layer">All</button>
+      </div>
+      <div class="group">
+        <span class="label">Trail</span>
+        <select id="trail">
+          <option value="30">last 30 s</option>
+          <option value="120">last 2 min</option>
+          <option value="Infinity" selected>whole session</option>
+          <option value="0">off</option>
+        </select>
+      </div>
+      <button id="fit" title="Zoom to fit everything">Fit</button>
+    </div>
+    <div id="canvasWrap">
+      <canvas id="canvas"></canvas>
+      <div id="viewHint"></div>
+      <div id="drop">Drop an archcraft_log .jsonl file here<br>or use “Open log…”</div>
+      <div id="legend"></div>
+      <div id="tip"></div>
+    </div>
+  </section>
+
+  <aside>
+    <section id="stats"><h2>Session</h2><div class="note">Load a log to see its summary.</div></section>
+    <section id="selection"></section>
+    <section><h2>Show events</h2><div id="filters"></div></section>
+    <section id="eventsBox"><h2>Events</h2><div id="events"></div></section>
+  </aside>
+</main>
+
+<footer>
+  <button id="play" disabled>Play</button>
+  <select id="speed" aria-label="Playback speed">
+    <option value="1">1×</option>
+    <option value="4" selected>4×</option>
+    <option value="16">16×</option>
+    <option value="64">64×</option>
+  </select>
+  <label title="During playback, jump over stretches with no events"><input type="checkbox" id="skipIdle" checked> Skip idle gaps</label>
+  <input type="range" id="scrub" min="0" max="1000" value="0" step="any" disabled aria-label="Session time" class="wide">
+  <span id="clock">0:00 / 0:00</span>
+</footer>
+
+<script>
+"use strict";
+
+// ---- Data model -------------------------------------------------------------
+
+const BLOCK_EVENTS = new Set(["place", "dig", "rightclick", "redstone", "punch"]);
+const EVENT_ORDER = ["place", "dig", "rightclick", "redstone", "punch", "move", "wield", "command", "join", "leave", "session_start", "session_end"];
+const HIDDEN_BY_DEFAULT = new Set(["move", "wield"]);
+const IDLE_GAP = 3; // seconds of session time with no events that playback skips
+
+const VIEWS = {
+  top:   { axis: "y", sign: 1,  label: "Height (y)", hint: "Top view: looking down, north is up",
+           proj: p => ({ u: p.x, v: p.z, d: p.y }), axes: ["x", "z"] },
+  front: { axis: "z", sign: -1, label: "Depth (z)",  hint: "Front view: looking north, from the south",
+           proj: p => ({ u: p.x, v: p.y, d: -p.z }), axes: ["x", "y"] },
+  side:  { axis: "x", sign: 1,  label: "Depth (x)",  hint: "Side view: looking west, from the east",
+           proj: p => ({ u: p.z, v: p.y, d: p.x }), axes: ["z", "y"] },
+};
+
+const state = {
+  events: [], bad: 0, fileName: "",
+  t0: 0, t1: 0, T: 0, cursor: 0,
+  initial: new Map(), blocks: new Map(),
+  players: new Map(),            // name -> {moves: [...], leaves: [t...], joins: [t...]}
+  bounds: null,                  // {x:[lo,hi], y:[...], z:[...]}
+  view: "top",
+  range: { top: null, front: null, side: null },
+  cam: { u: 0, v: 0, zoom: 24 },
+  filters: new Set(),
+  selected: null,                // block key
+  playing: false,
+};
+
+const posKey = p => p.x + "," + p.y + "," + p.z;
+const hasPos = e => e.pos && typeof e.pos.x === "number";
+
+function parseLog(text) {
+  const events = [];
+  let bad = 0;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const e = JSON.parse(line);
+      if (typeof e.t === "number" && typeof e.event === "string") events.push(e);
+      else bad++;
+    } catch (_) {
+      bad++;
+    }
+  }
+  events.forEach((e, i) => { e._i = i; });
+  events.sort((a, b) => a.t - b.t || a._i - b._i);
+  return { events, bad };
+}
+
+// The node that was at a position before this event happened.
+function nodeBefore(e) {
+  switch (e.event) {
+    case "place": return e.replaced;
+    case "dig": case "rightclick": case "punch": return e.node;
+    case "redstone": return e.from;
+  }
+  return null;
+}
+
+// The node at a position after this event happened.
+function nodeAfter(e) {
+  switch (e.event) {
+    case "place": return e.node;
+    case "dig": return "air";
+    case "rightclick": return e.after || e.node;
+    case "redstone": return e.to;
+    case "punch": return e.node;
+  }
+  return null;
+}
+
+function load(text, name) {
+  const { events, bad } = parseLog(text);
+  if (!events.length) {
+    alertBox(`${name}: no archcraft_log events found${bad ? ` (${bad} unreadable lines)` : ""}.`);
+    return;
+  }
+  Object.assign(state, {
+    events, bad, fileName: name,
+    t0: events[0].t, t1: events[events.length - 1].t,
+    initial: new Map(), players: new Map(), selected: null,
+  });
+  selHist = { key: null, list: [] };
+
+  // Blocks the log first sees being used rather than placed existed before
+  // the log started (for example, ground punched or a lever placed earlier).
+  const seen = new Set();
+  const lo = { x: Infinity, y: Infinity, z: Infinity }, hi = { x: -Infinity, y: -Infinity, z: -Infinity };
+  const grow = p => { for (const a of "xyz") { lo[a] = Math.min(lo[a], p[a]); hi[a] = Math.max(hi[a], p[a]); } };
+
+  for (const e of events) {
+    if (BLOCK_EVENTS.has(e.event) && hasPos(e)) {
+      grow(e.pos);
+      const k = posKey(e.pos);
+      if (!seen.has(k)) {
+        seen.add(k);
+        const before = nodeBefore(e);
+        if (before && before !== "air") state.initial.set(k, { pos: e.pos, node: before });
+      }
+    }
+    if (e.player && ["move", "join", "leave"].includes(e.event)) {
+      let p = state.players.get(e.player);
+      if (!p) state.players.set(e.player, p = { moves: [], leaves: [], joins: [] });
+      if (e.event === "move" && hasPos(e)) {
+        p.moves.push({ t: e.t, x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw || 0, pitch: e.pitch || 0 });
+        grow(e.pos);
+      } else if (e.event === "join") p.joins.push(e.t);
+      else if (e.event === "leave") p.leaves.push(e.t);
+    }
+  }
+  if (lo.x === Infinity) { lo.x = lo.z = -8; hi.x = hi.z = 8; lo.y = 8; hi.y = 12; }
+  state.bounds = {
+    x: [Math.floor(lo.x), Math.ceil(hi.x)],
+    y: [Math.floor(lo.y), Math.ceil(hi.y)],
+    z: [Math.floor(lo.z), Math.ceil(hi.z)],
+  };
+  for (const v of Object.keys(VIEWS)) state.range[v] = state.bounds[VIEWS[v].axis].slice();
+
+  state.filters = new Set(EVENT_ORDER.concat(events.map(e => e.event)).filter(n => !HIDDEN_BY_DEFAULT.has(n)));
+  state.T = -Infinity;
+  seek(state.t1);
+
+  $("drop").classList.add("hidden");
+  $("csv").disabled = false;
+  $("play").disabled = false;
+  $("scrub").disabled = false;
+  renderSummary();
+  renderFilters();
+  renderEventList();
+  syncRangeInputs();
+  fit();
+  update();
+}
+
+function seek(T) {
+  T = Math.max(state.t0, Math.min(state.t1, T));
+  if (T < state.T) {
+    state.blocks = new Map(state.initial);
+    state.cursor = 0;
+  } else if (state.T === -Infinity) {
+    state.blocks = new Map(state.initial);
+    state.cursor = 0;
+  }
+  const ev = state.events;
+  while (state.cursor < ev.length && ev[state.cursor].t <= T) {
+    const e = ev[state.cursor++];
+    if (!BLOCK_EVENTS.has(e.event) || !hasPos(e)) continue;
+    const node = nodeAfter(e), k = posKey(e.pos);
+    if (!node || node === "air") state.blocks.delete(k);
+    else state.blocks.set(k, { pos: e.pos, node });
+  }
+  state.T = T;
+}
+
+// Index of the last element with .t <= T, or -1.
+function lastAtOrBefore(arr, T) {
+  let lo = 0, hi = arr.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid].t <= T) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return ans;
+}
+
+function playerAt(p, T) {
+  const i = lastAtOrBefore(p.moves, T);
+  if (i < 0) return null;
+  const m = p.moves[i];
+  if (p.leaves.some(t => t > m.t && t <= T)) return null;
+  return m;
+}
+
+// ---- Block appearance ---------------------------------------------------------
+
+function hashHue(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+
+// Returns {group, color, on}. on is true/false for components with a state, else null.
+function blockStyle(name) {
+  const n = name.toLowerCase();
+  const on = /_on(_|$)|_lit$/.test(n) ? true : /_off(_|$)/.test(n) ? false : null;
+  const rules = [
+    [/redstone_lamp/,           "Lamp",            on ? "#ffd23f" : "#7a6a3a"],
+    [/redstone:wire|redstone:redstone$/, "Wire",   "#c4231b"],
+    [/redstone_torch:redstoneblock/, "Redstone block", "#a3140e"],
+    [/redstone_torch/,          "Torch",           on ? "#ff5a36" : "#5e2a22"],
+    [/repeater/,                "Repeater",        on ? "#ff8a7a" : "#9e9e9e"],
+    [/comparator/,              "Comparator",      on ? "#ff9fc0" : "#b0a7b8"],
+    [/lever/,                   "Lever",           on ? "#e0a050" : "#8a6233"],
+    [/button/,                  "Button",          on ? "#f2f2f2" : "#bdbdbd"],
+    [/pressureplate|pressure_plate/, "Pressure plate", on ? "#e8e0c0" : "#a8a088"],
+    [/piston/,                  "Piston",          "#9c8a5a"],
+    [/observer/,                "Observer",        on ? "#7a8cff" : "#5a5f6e"],
+    [/noteblock/,               "Note block",      "#6b4a2b"],
+    [/target/,                  "Target",          "#e9d6cf"],
+    [/dispenser|dropper/,       "Dispenser",       "#7d7d7d"],
+    [/hopper/,                  "Hopper",          "#4a4a4a"],
+    [/daylight/,                "Daylight sensor", "#c9b48a"],
+    [/tnt/,                     "TNT",             "#d8452f"],
+    [/glass/,                   "Glass",           "#bfe3ea"],
+    [/stone|cobble/,            "Stone",           "#8e8e8a"],
+    [/dirt_with_grass/,         "Grass",           "#6e9c45"],
+    [/dirt/,                    "Dirt",            "#8a6142"],
+    [/bedrock/,                 "Bedrock",         "#3f3f3f"],
+  ];
+  for (const [re, group, color] of rules) if (re.test(n)) return { group, color, on };
+  return { group: "Other", color: `hsl(${hashHue(n)} 22% 58%)`, on };
+}
+
+// ---- Rendering -------------------------------------------------------------
+
+const $ = id => document.getElementById(id);
+const canvas = $("canvas");
+const ctx = canvas.getContext("2d");
+let css = {};
+
+function readColors() {
+  const s = getComputedStyle(document.documentElement);
+  for (const k of ["canvas", "ground", "grid", "ink", "muted", "player", "select", "ev-place", "ev-dig", "ev-rightclick", "ev-redstone", "ev-punch"])
+    css[k] = s.getPropertyValue("--" + k).trim();
+}
+
+function resize() {
+  const r = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(r.width * dpr));
+  canvas.height = Math.max(1, Math.round(r.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+function toScreen(u, v) {
+  const r = canvas.getBoundingClientRect(), c = state.cam;
+  return [r.width / 2 + (u - c.u) * c.zoom, r.height / 2 - (v - c.v) * c.zoom];
+}
+
+function toWorld(sx, sy) {
+  const r = canvas.getBoundingClientRect(), c = state.cam;
+  return [c.u + (sx - r.width / 2) / c.zoom, c.v - (sy - r.height / 2) / c.zoom];
+}
+
+// Visible blocks for the current view and slice: the block nearest the viewer in each cell.
+function visibleCells() {
+  const V = VIEWS[state.view], [lo, hi] = state.range[state.view];
+  const cells = new Map();
+  for (const [k, b] of state.blocks) {
+    const a = b.pos[V.axis];
+    if (a < lo || a > hi) continue;
+    const p = V.proj(b.pos);
+    const ck = p.u + "," + p.v;
+    const cur = cells.get(ck);
+    if (!cur || p.d > cur.d) cells.set(ck, { u: p.u, v: p.v, d: p.d, key: k, block: b });
+  }
+  return cells;
+}
+
+function draw() {
+  const r = canvas.getBoundingClientRect(), W = r.width, H = r.height;
+  const V = VIEWS[state.view], z = state.cam.zoom;
+  ctx.fillStyle = css.canvas;
+  ctx.fillRect(0, 0, W, H);
+  if (!state.events.length) return;
+
+  const [wl, wt] = toWorld(0, 0), [wr, wb] = toWorld(W, H);
+
+  // Ground: the superflat surface is the top of y = 8 (blocks span ±0.5).
+  if (state.view !== "top") {
+    const [, gy] = toScreen(0, 8.5);
+    ctx.fillStyle = css.ground;
+    ctx.fillRect(0, gy, W, H - gy);
+  }
+
+  // Grid
+  if (z >= 8) {
+    ctx.strokeStyle = css.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let u = Math.floor(wl) - 0.5; u <= wr + 1; u++) { const [x] = toScreen(u, 0); ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let v = Math.floor(wb) - 0.5; v <= wt + 1; v++) { const [, y] = toScreen(0, v); ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  }
+
+  // Blocks. Ones farther from the viewer than the nearest visible block are faded.
+  const [lo, hi] = state.range[state.view];
+  const cells = visibleCells();
+  let dLo = Infinity, dHi = -Infinity;
+  for (const c of cells.values()) { dLo = Math.min(dLo, c.d); dHi = Math.max(dHi, c.d); }
+  const groups = new Map();
+  for (const c of cells.values()) {
+    const st = blockStyle(c.block.node);
+    groups.set(st.group, st.color);
+    const near = dHi > dLo ? (c.d - dLo) / (dHi - dLo) : 1;
+    const [x, y] = toScreen(c.u - 0.5, c.v + 0.5);
+    ctx.globalAlpha = 0.6 + 0.4 * near;
+    ctx.fillStyle = st.color;
+    ctx.fillRect(x, y, z, z);
+    if (st.on === true && z >= 6) {
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "#fff6";
+      ctx.lineWidth = Math.max(1, z * 0.08);
+      ctx.strokeRect(x + z * 0.2, y + z * 0.2, z * 0.6, z * 0.6);
+    }
+  }
+  ctx.globalAlpha = 1;
+  renderLegend(groups);
+
+  // Recent block events pulse for 3 s of session time.
+  const recentFrom = state.T - 3;
+  for (let i = state.cursor - 1; i >= 0 && state.events[i].t >= recentFrom; i--) {
+    const e = state.events[i];
+    if (!BLOCK_EVENTS.has(e.event) || !hasPos(e) || !state.filters.has(e.event)) continue;
+    const a = e.pos[V.axis];
+    if (a < lo || a > hi) continue;
+    const p = V.proj(e.pos), [x, y] = toScreen(p.u, p.v);
+    const age = (state.T - e.t) / 3;
+    ctx.globalAlpha = 1 - age;
+    ctx.strokeStyle = css["ev-" + e.event];
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(x, y, z * (0.6 + age * 0.6), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Selected block outline
+  if (state.selected) {
+    const [sx, sy, sz] = state.selected.split(",").map(Number);
+    const p = V.proj({ x: sx, y: sy, z: sz }), [x, y] = toScreen(p.u - 0.5, p.v + 0.5);
+    ctx.strokeStyle = css.select;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(x - 1, y - 1, z + 2, z + 2);
+    ctx.setLineDash([]);
+  }
+
+  // Players: trail, then position and look direction.
+  const trail = Number($("trail").value);
+  for (const [name, p] of state.players) {
+    if (trail > 0 && p.moves.length) {
+      const end = lastAtOrBefore(p.moves, state.T);
+      ctx.strokeStyle = css.player;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i <= end; i++) {
+        const m = p.moves[i];
+        if (m.t < state.T - trail) continue;
+        const q = V.proj(m), [x, y] = toScreen(q.u, q.v);
+        if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    const m = playerAt(p, state.T);
+    if (!m) continue;
+    const q = V.proj(m), [x, y] = toScreen(q.u, q.v);
+    // Luanti yaw 0 faces +z and turns toward -x; positive pitch looks down.
+    const yaw = m.yaw * Math.PI / 180, pitch = m.pitch * Math.PI / 180;
+    const look = { x: -Math.sin(yaw) * Math.cos(pitch), y: -Math.sin(pitch), z: Math.cos(yaw) * Math.cos(pitch) };
+    const lq = V.proj(look);
+    const len = Math.max(14, z * 1.2);
+    ctx.strokeStyle = css.player;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + lq.u * len, y - lq.v * len);
+    ctx.stroke();
+    ctx.fillStyle = css.player;
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillText(name, x + 8, y - 8);
+  }
+
+  // Axis labels along the edges.
+  ctx.fillStyle = css.muted;
+  ctx.font = "11px system-ui, sans-serif";
+  const step = niceStep(60 / z);
+  for (let u = Math.ceil(wl / step) * step; u <= wr; u += step) {
+    const [x] = toScreen(u, 0);
+    ctx.fillText(V.axes[0] + "=" + u, x + 2, H - 4);
+  }
+  for (let v = Math.ceil(wb / step) * step; v <= wt; v += step) {
+    const [, y] = toScreen(0, v);
+    ctx.fillText(V.axes[1] + "=" + v, W - 44, y - 2);
+  }
+}
+
+function niceStep(raw) {
+  for (const s of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]) if (s >= raw) return s;
+  return 1000;
+}
+
+function renderLegend(groups) {
+  const html = [...groups].sort().map(([g, c]) => `<span><span class="sw" style="background:${c}"></span>${g}</span>`).join("");
+  if ($("legend").innerHTML !== html) $("legend").innerHTML = html;
+}
+
+// ---- Panels ------------------------------------------------------------------
+
+const fmtDur = s => {
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(sec).padStart(2, "0");
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const short = n => String(n).replace(/^mcl_[a-z_]*:/, "");
+const fmtPos = p => `${p.x}, ${p.y}, ${p.z}`;
+
+function renderSummary() {
+  const s = state.events.find(e => e.event === "session_start") || {};
+  const when = new Date(state.t0 * 1000);
+  $("summary").textContent = `${state.fileName} · ${when.toLocaleString()} · ${fmtDur(state.t1 - state.t0)}`
+    + (state.bad ? ` · ${state.bad} unreadable line(s) skipped` : "");
+  const counts = {};
+  for (const e of state.events) counts[e.event] = (counts[e.event] || 0) + 1;
+  const rows = [
+    ["World", s.world || "?"], ["Game", s.game || "?"], ["Players", [...state.players.keys()].join(", ") || "none"],
+    ["Blocks placed", counts.place || 0], ["Blocks dug", counts.dig || 0],
+    ["Right-clicks", counts.rightclick || 0], ["Redstone changes", counts.redstone || 0],
+    ["Commands", counts.command || 0],
+  ];
+  $("stats").innerHTML = "<h2>Session</h2><table>" + rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("") + "</table>";
+}
+
+function renderFilters() {
+  const present = new Set(state.events.map(e => e.event));
+  const names = EVENT_ORDER.filter(n => present.has(n)).concat([...present].filter(n => !EVENT_ORDER.includes(n)).sort());
+  $("filters").innerHTML = names.map(n => {
+    const color = BLOCK_EVENTS.has(n) ? `<span class="sw" style="background:var(--ev-${n})"></span>` : "";
+    return `<label><input type="checkbox" value="${esc(n)}" ${state.filters.has(n) ? "checked" : ""}> ${color}${esc(n)}</label>`;
+  }).join("");
+}
+
+function describe(e) {
+  const pos = hasPos(e) ? ` @ ${fmtPos(e.pos)}` : "";
+  switch (e.event) {
+    case "place": return `${short(e.node)}${pos}`;
+    case "dig": return `${short(e.node)}${pos}`;
+    case "punch": return `${short(e.node)}${pos}`;
+    case "rightclick": return `${short(e.node)}${e.after ? " → " + short(e.after) : ""}${pos}`;
+    case "redstone": return `${short(e.from)} → ${short(e.to)}${pos}`;
+    case "move": return `${fmtPos(e.pos)} yaw ${e.yaw} pitch ${e.pitch}`;
+    case "wield": return e.item ? short(e.item) : "(empty hand)";
+    case "command": return `/${e.command} ${e.params || ""}`;
+    case "join": return `${e.player} joined`;
+    case "leave": return `${e.player} left${e.timed_out ? " (timed out)" : ""}`;
+    case "session_start": return `${e.game || ""} ${e.luanti ? "on Luanti " + e.luanti : ""}`;
+    default: {
+      const { t, event, _i, ...rest } = e;
+      return JSON.stringify(rest);
+    }
+  }
+}
+
+const MAX_ROWS = 4000;
+let rowEls = [];
+
+function renderEventList() {
+  const box = $("events");
+  const list = state.events.filter(e => state.filters.has(e.event));
+  const shown = list.slice(0, MAX_ROWS);
+  const frag = document.createDocumentFragment();
+  rowEls = shown.map(e => {
+    const row = document.createElement("div");
+    row.className = "ev";
+    row.dataset.t = e.t;
+    row.innerHTML = `<span class="time">${fmtDur(e.t - state.t0)}</span><span style="color:var(--ev-${esc(e.event)}, inherit)">${esc(e.event)}</span><span class="detail">${esc(describe(e))}</span>`;
+    row.title = JSON.stringify(Object.fromEntries(Object.entries(e).filter(([k]) => k !== "_i")));
+    row._e = e;
+    frag.appendChild(row);
+    return row;
+  });
+  box.replaceChildren(frag);
+  if (list.length > MAX_ROWS) {
+    const n = document.createElement("div");
+    n.className = "note";
+    n.textContent = `Showing the first ${MAX_ROWS} of ${list.length} events. Turn off some event types to see the rest.`;
+    box.appendChild(n);
+  }
+  if (!list.length) box.innerHTML = `<div class="note">No events match the selected types.</div>`;
+  highlightRows();
+}
+
+let currentRow = null;
+function highlightRows() {
+  let cur = null;
+  for (const row of rowEls) {
+    const future = row._e.t > state.T;
+    row.classList.toggle("future", future);
+    if (!future) cur = row;
+  }
+  if (currentRow !== cur) {
+    currentRow && currentRow.classList.remove("current");
+    cur && cur.classList.add("current");
+    currentRow = cur;
+    if (cur && state.playing) cur.scrollIntoView({ block: "nearest" });
+  }
+}
+
+let selHist = { key: null, list: [] };
+function renderSelection() {
+  const box = $("selection");
+  if (!state.selected) { box.innerHTML = ""; return; }
+  const k = state.selected;
+  if (selHist.key !== k) {
+    selHist = { key: k, list: state.events.filter(e => BLOCK_EVENTS.has(e.event) && hasPos(e) && posKey(e.pos) === k) };
+  }
+  const hist = selHist.list;
+  const now = state.blocks.get(k);
+  box.innerHTML = `<button class="close" title="Clear selection">×</button><h2>Block ${esc(k.replace(/,/g, ", "))}</h2>`
+    + `<div style="font-size:13px;margin-bottom:4px">Now: <b>${esc(now ? now.node : "air or ground")}</b></div>`
+    + (hist.length ? hist.map(e => `<div class="ev${e.t > state.T ? " future" : ""}" data-t="${e.t}"><span class="time">${fmtDur(e.t - state.t0)}</span><span style="color:var(--ev-${e.event})">${e.event}</span><span class="detail">${esc(describe(e).replace(/ @ .*/, ""))}${e.player ? " · " + esc(e.player) : ""}</span></div>`).join("")
+      : `<div class="note" style="padding-left:0">No events at this position.</div>`);
+}
+
+// ---- Interaction -------------------------------------------------------------
+
+function update() {
+  const span = state.t1 - state.t0 || 1;
+  $("scrub").value = String((state.T - state.t0) / span * 1000);
+  $("clock").textContent = `${fmtDur(state.T - state.t0)} / ${fmtDur(state.t1 - state.t0)}`;
+  highlightRows();
+  renderSelection();
+  draw();
+}
+
+function setView(v) {
+  state.view = v;
+  for (const b of document.querySelectorAll("[data-view]")) b.setAttribute("aria-pressed", String(b.dataset.view === v));
+  syncRangeInputs();
+  fit();
+}
+
+function syncRangeInputs() {
+  const V = VIEWS[state.view], [lo, hi] = state.range[state.view] || [0, 0];
+  $("rangeLabel").textContent = V.label;
+  $("rangeLo").value = lo;
+  $("rangeHi").value = hi;
+  $("viewHint").textContent = V.hint;
+}
+
+function fit() {
+  if (!state.bounds) return;
+  const V = VIEWS[state.view], b = state.bounds;
+  const [ua, va] = V.axes;
+  let u0 = b[ua][0] - 1, u1 = b[ua][1] + 1, v0 = b[va][0] - 1, v1 = b[va][1] + 1;
+  if (state.view !== "top") v0 = Math.min(v0, 6);
+  const r = canvas.getBoundingClientRect();
+  state.cam.u = (u0 + u1) / 2;
+  state.cam.v = (v0 + v1) / 2;
+  state.cam.zoom = Math.max(2, Math.min(64, Math.min(r.width / (u1 - u0 + 2), r.height / (v1 - v0 + 2))));
+  draw();
+}
+
+function jumpTo(t) {
+  stop();
+  seek(t);
+  update();
+}
+
+let lastFrame = 0;
+function frame(ts) {
+  if (!state.playing) return;
+  const dt = lastFrame ? (ts - lastFrame) / 1000 : 0;
+  lastFrame = ts;
+  let T = state.T + dt * Number($("speed").value);
+  const next = state.events[state.cursor];
+  if ($("skipIdle").checked && next && next.t - T > IDLE_GAP) T = next.t - 0.5;
+  if (T >= state.t1) { seek(state.t1); stop(); update(); return; }
+  seek(T);
+  update();
+  requestAnimationFrame(frame);
+}
+
+function play() {
+  if (state.T >= state.t1) seek(state.t0);
+  state.playing = true;
+  $("play").textContent = "Pause";
+  lastFrame = 0;
+  requestAnimationFrame(frame);
+}
+
+function stop() {
+  state.playing = false;
+  $("play").textContent = "Play";
+}
+
+$("play").onclick = () => state.playing ? stop() : play();
+$("scrub").oninput = e => { stop(); seek(state.t0 + Number(e.target.value) / 1000 * (state.t1 - state.t0)); update(); };
+$("trail").onchange = draw;
+$("fit").onclick = fit;
+for (const b of document.querySelectorAll("[data-view]")) b.onclick = () => setView(b.dataset.view);
+
+function setRange(lo, hi) {
+  if (!state.bounds || isNaN(lo) || isNaN(hi)) return;
+  state.range[state.view] = [Math.min(lo, hi), Math.max(lo, hi)];
+  draw();
+}
+$("rangeLo").oninput = () => setRange(Number($("rangeLo").value), Number($("rangeHi").value));
+$("rangeHi").oninput = () => setRange(Number($("rangeLo").value), Number($("rangeHi").value));
+$("rangeAll").onclick = () => {
+  if (!state.bounds) return;
+  state.range[state.view] = state.bounds[VIEWS[state.view].axis].slice();
+  syncRangeInputs();
+  draw();
+};
+
+$("filters").onchange = e => {
+  if (e.target.checked) state.filters.add(e.target.value); else state.filters.delete(e.target.value);
+  renderEventList();
+  draw();
+};
+
+for (const id of ["events", "selection"]) {
+  $(id).addEventListener("click", e => {
+    if (e.target.closest(".close")) { state.selected = null; renderSelection(); draw(); return; }
+    const row = e.target.closest(".ev");
+    if (row) jumpTo(Number(row.dataset.t));
+  });
+}
+
+// Pan with drag, zoom with the wheel, click a block to see its history.
+let drag = null;
+canvas.addEventListener("pointerdown", e => {
+  drag = { x: e.clientX, y: e.clientY, u: state.cam.u, v: state.cam.v, moved: false };
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; canvas.classList.add("dragging"); }
+    state.cam.u = drag.u - dx / state.cam.zoom;
+    state.cam.v = drag.v + dy / state.cam.zoom;
+    draw();
+    return;
+  }
+  showTip(e);
+});
+canvas.addEventListener("pointerup", e => {
+  if (drag && !drag.moved) {
+    const c = cellAt(e);
+    state.selected = c ? c.key : null;
+    renderSelection();
+    draw();
+  }
+  drag = null;
+  canvas.classList.remove("dragging");
+});
+canvas.addEventListener("pointerleave", () => { $("tip").style.display = "none"; });
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+  const [u, v] = toWorld(sx, sy);
+  state.cam.zoom = Math.max(2, Math.min(96, state.cam.zoom * Math.exp(-e.deltaY * 0.0015)));
+  const [u2, v2] = toWorld(sx, sy);
+  state.cam.u += u - u2;
+  state.cam.v += v - v2;
+  draw();
+}, { passive: false });
+
+function cellAt(e) {
+  const r = canvas.getBoundingClientRect();
+  const [u, v] = toWorld(e.clientX - r.left, e.clientY - r.top);
+  return visibleCells().get(Math.round(u) + "," + Math.round(v)) || null;
+}
+
+function showTip(e) {
+  const tip = $("tip");
+  if (!state.events.length) return;
+  const r = canvas.getBoundingClientRect();
+  const [u, v] = toWorld(e.clientX - r.left, e.clientY - r.top);
+  const c = cellAt(e);
+  const V = VIEWS[state.view];
+  const coords = `${V.axes[0]} = ${Math.round(u)}, ${V.axes[1]} = ${Math.round(v)}`;
+  tip.textContent = c ? `${c.block.node}\n${fmtPos(c.block.pos)}` : coords;
+  tip.style.display = "block";
+  tip.style.left = Math.min(r.width - 200, e.clientX - r.left + 14) + "px";
+  tip.style.top = (e.clientY - r.top + 14) + "px";
+}
+
+// Keyboard: space plays/pauses, arrows step between filtered events.
+document.addEventListener("keydown", e => {
+  if (!state.events.length || e.target.matches("input[type=number], select")) return;
+  if (e.key === " ") { e.preventDefault(); state.playing ? stop() : play(); }
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    e.preventDefault();
+    const list = state.events.filter(ev => state.filters.has(ev.event));
+    const target = e.key === "ArrowRight" ? list.find(ev => ev.t > state.T) : [...list].reverse().find(ev => ev.t < state.T);
+    if (target) jumpTo(target.t);
+  }
+});
+
+// ---- Loading and export --------------------------------------------------------
+
+function readFile(file) {
+  if (!file) return;
+  stop();
+  file.text().then(text => load(text, file.name));
+}
+
+function alertBox(msg) {
+  const d = $("drop");
+  d.classList.remove("hidden");
+  d.textContent = msg;
+}
+
+$("file").onchange = e => readFile(e.target.files[0]);
+const wrap = $("canvasWrap");
+wrap.addEventListener("dragover", e => { e.preventDefault(); $("drop").classList.remove("hidden"); $("drop").classList.add("over"); });
+wrap.addEventListener("dragleave", () => { $("drop").classList.remove("over"); if (state.events.length) $("drop").classList.add("hidden"); });
+wrap.addEventListener("drop", e => {
+  e.preventDefault();
+  $("drop").classList.remove("over");
+  readFile(e.dataTransfer.files[0]);
+});
+
+$("csv").onclick = () => {
+  const cols = ["t", "time_utc", "seconds", "event", "player", "x", "y", "z", "node", "after", "from", "to", "item", "yaw", "pitch", "command", "params"];
+  const cell = v => v === undefined || v === null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const lines = [cols.join(",")];
+  for (const e of state.events) {
+    const row = {
+      ...e, time_utc: new Date(e.t * 1000).toISOString(), seconds: (e.t - state.t0).toFixed(3),
+      x: e.pos && e.pos.x, y: e.pos && e.pos.y, z: e.pos && e.pos.z,
+    };
+    lines.push(cols.map(c => cell(row[c])).join(","));
+  }
+  const blob = new Blob([lines.join("\n") + "\n"], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = state.fileName.replace(/\.jsonl?$/i, "") + ".csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+readColors();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); draw(); });
+new ResizeObserver(resize).observe(canvas);
+</script>
+</body>
+</html>
